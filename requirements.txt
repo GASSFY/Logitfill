@@ -1,43 +1,15 @@
-# basic requirements
-torch>=2.0
-torchvision
-xopen
-anthropic
+# LogitFill
+# Python 3.10.22
+# GPU wheel: torch 2.5.1 built for CUDA 12.4
+#
+# conda create -n logitfill python=3.10 -y
+# conda activate logitfill
+# pip install torch==2.5.1 --index-url https://download.pytorch.org/whl/cu124
+# pip install -r requirements.txt
+# pip install -e .
 
-# huggingface requirements
-accelerate>=0.21.0
-transformers==4.51.3
-datasets
-evaluate
-httpx==0.23.3
-
-# for logging or special models
-wandb
-sentencepiece
-
-# for longbench
-tqdm
-rouge
-jieba
-fuzzywuzzy
-einops
-
-# for visualization
-seaborn
-
-# for conversation tasks
-anthropic
-openai==0.28
-fschat
-
-# use flash attention
-packaging
-ninja
-triton>=2.1.0
-
-decord
-easydict
-imageio
-qwen-vl-utils
-
-# lmms-eval: install separately if needed, e.g. pip install lmms-eval
+torch==2.5.1
+transformers==4.49.0
+numpy==2.2.6
+datasets==3.3.2
+accelerate==1.4.0

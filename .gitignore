@@ -44,6 +44,10 @@ configs/*
 # Local experiment workspace (logs, checkpoints, ad-hoc scripts)
 experiments/
 
+# Generated outputs under exp/. Scripts and READMEs stay tracked.
+exp/**/results/
+exp/**/smoke/
+
 # Experiment write-ups stay local until publication
 docs/
 
