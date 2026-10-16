@@ -11,7 +11,6 @@ from __future__ import annotations
 
 import argparse
 import json
-import sys
 import time
 from pathlib import Path
 
@@ -21,13 +20,12 @@ from datasets import load_dataset
 from transformers import AutoModelForCausalLM, AutoTokenizer
 
 ROOT = Path(__file__).resolve().parents[2]
-sys.path.insert(0, str(ROOT))
 
-from logitfill.evaluation.scoring import token_nll
+from logitfill.allocators.allocate import allocate_levels, level_histogram, waterfill
+from logitfill.benchmarks.scoring import token_nll
+from logitfill.calibration.distort import channel_curves
 from logitfill.models.deepseek_qwen import DeepSeekQwenKVAdapter
-from logitfill.quantization.allocate import allocate_levels, level_histogram, waterfill
-from logitfill.quantization.distort import channel_curves
-from logitfill.quantization.quantizer import make_quantizers
+from logitfill.quantizers.quantizer import make_quantizers
 # extra bits per head. 32 -> 2.25 bit, 62 -> 2.484 bit, 174 -> 3.359 bit.
 DISTORTION_EXTRAS = (32, 62)
 ALLOC_EXTRAS = (62, 174)

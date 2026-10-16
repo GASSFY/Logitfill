@@ -11,9 +11,9 @@ from pathlib import Path
 
 import numpy as np
 
-from logitfill.quantization.allocate import allocate_levels, kv_history_budget
-from logitfill.quantization.distort import channel_curves, mean_curves, normalize_channel_curves
-from logitfill.policy import PrecisionPolicy, build_policy
+from logitfill.allocators.allocate import allocate_levels, kv_history_budget
+from logitfill.allocators.policy import PrecisionPolicy, build_policy
+from logitfill.calibration.distort import channel_curves, mean_curves, normalize_channel_curves
 
 _CURVE_KEYS = ("q", "e2", "e4", "e8", "d2", "d4", "d8")
 

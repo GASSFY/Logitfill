@@ -13,7 +13,7 @@ from pathlib import Path
 import numpy as np
 
 from logitfill import __version__
-from logitfill.quantization.allocate import (
+from logitfill.allocators.allocate import (
     LEVEL_BITS,
     achieved_history_bits,
     assert_history_budget,

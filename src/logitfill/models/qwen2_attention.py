@@ -14,7 +14,7 @@ from __future__ import annotations
 
 import torch
 
-from logitfill.quantization.quantizer import quantize_along_features, quantize_along_time
+from logitfill.quantizers.quantizer import quantize_along_features, quantize_along_time
 
 
 def cache_length(past_key_value, layer_idx: int) -> int:

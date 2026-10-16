@@ -8,7 +8,7 @@ from __future__ import annotations
 
 import numpy as np
 
-from logitfill.quantization.allocate import LEVEL_BITS, achieved_history_bits
+from logitfill.allocators.allocate import LEVEL_BITS, achieved_history_bits
 
 
 def _pad_channels(count: int, bits: int) -> int:

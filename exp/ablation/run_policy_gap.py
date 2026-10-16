@@ -8,11 +8,9 @@ from __future__ import annotations
 
 import argparse
 import json
-import sys
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[2]
-sys.path.insert(0, str(ROOT))
 
 from logitfill.calibration import (
     aggregate_curves,
@@ -21,11 +19,10 @@ from logitfill.calibration import (
     load_records,
     policies_from_curves,
 )
-from logitfill.evaluation.scoring import token_nll
+from logitfill.allocators.allocate import allocate_levels, kv_history_budget
+from logitfill.benchmarks.scoring import token_nll
 from logitfill.models.deepseek_qwen import DeepSeekQwenKVAdapter
-from logitfill.quantization.allocate import kv_history_budget
-from logitfill.quantization.allocate import allocate_levels
-from logitfill.quantization.quantizer import make_quantizers
+from logitfill.quantizers.quantizer import make_quantizers
 
 
 def _levels_from_capture(curves, target_kv_bit: float, v_bits: int) -> "object":

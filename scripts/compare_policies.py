@@ -9,14 +9,12 @@ from __future__ import annotations
 
 import argparse
 import json
-import sys
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
-sys.path.insert(0, str(ROOT))
 
-from logitfill.policy import PrecisionPolicy, consensus_levels, overlap_report
-from logitfill.quantization.allocate import assert_history_budget
+from logitfill.allocators.allocate import assert_history_budget
+from logitfill.allocators.policy import PrecisionPolicy, consensus_levels, overlap_report
 
 
 def _named_dir(value: str) -> tuple[str, str]:
@@ -54,12 +52,12 @@ def _evaluate(policies: dict[str, PrecisionPolicy], args) -> dict:
     import torch
     from transformers import AutoModelForCausalLM, AutoTokenizer
 
+    from logitfill.benchmarks.aime import answers_equal, extract_answer, summarize_generations
+    from logitfill.benchmarks.generate import generate_text
+    from logitfill.benchmarks.scoring import token_nll
     from logitfill.calibration import capture_curves, encode_pair, load_records
-    from logitfill.evaluation.aime import answers_equal, extract_answer, summarize_generations
-    from logitfill.evaluation.generate import generate_text
-    from logitfill.evaluation.scoring import token_nll
     from logitfill.models.deepseek_qwen import DeepSeekQwenKVAdapter
-    from logitfill.quantization.quantizer import make_quantizers
+    from logitfill.quantizers.quantizer import make_quantizers
 
     first = next(iter(policies.values()))
     tokenizer = AutoTokenizer.from_pretrained(args.model, trust_remote_code=True)

@@ -9,11 +9,7 @@ from __future__ import annotations
 
 import argparse
 import json
-import sys
 from pathlib import Path
-
-ROOT = Path(__file__).resolve().parents[1]
-sys.path.insert(0, str(ROOT))
 
 from logitfill.calibration import (
     aggregate_curves,
@@ -23,7 +19,7 @@ from logitfill.calibration import (
     policies_from_curves,
 )
 from logitfill.models.deepseek_qwen import DeepSeekQwenKVAdapter
-from logitfill.quantization.quantizer import make_quantizers
+from logitfill.quantizers.quantizer import make_quantizers
 
 
 def _named_path(value: str) -> tuple[str, str]:

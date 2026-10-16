@@ -5,20 +5,15 @@ check is skipped unless CUDA is available.
 """
 from __future__ import annotations
 
-import sys
 import tempfile
 import unittest
-from pathlib import Path
 
 import numpy as np
 
-ROOT = Path(__file__).resolve().parents[1]
-sys.path.insert(0, str(ROOT))
-
-from logitfill.policy import PrecisionPolicy, build_policy, consensus_levels, overlap_report, spearman
-from logitfill.quantization.allocate import assert_history_budget, kv_history_budget, waterfill
-from logitfill.quantization.distort import normalize_channel_curves
-from logitfill.quantization.memory import runtime_footprint
+from logitfill.allocators.policy import PrecisionPolicy, build_policy, consensus_levels, overlap_report, spearman
+from logitfill.allocators.allocate import assert_history_budget, kv_history_budget, waterfill
+from logitfill.allocators.memory import runtime_footprint
+from logitfill.calibration.distort import normalize_channel_curves
 
 
 class BudgetPolicyTest(unittest.TestCase):
@@ -106,7 +101,7 @@ class TorchScheduleTest(unittest.TestCase):
     def test_completed_page_keeps_tail(self):
         torch = self._torch()
         from logitfill.models.qwen2_attention import quantize_completed_pages
-        from logitfill.quantization.quantizer import make_quantizers, make_value_quantizer
+        from logitfill.quantizers.quantizer import make_quantizers, make_value_quantizer
 
         class Attention:
             pass
@@ -132,7 +127,7 @@ class TorchScheduleTest(unittest.TestCase):
     def test_key_pack_matches_group_quantizer(self):
         torch = self._torch()
         from logitfill.packed.layout import dequantize_key, quantize_key_page, quantize_value_page, dequantize_value, tier_tables
-        from logitfill.quantization.quantizer import GroupQuantizer, quantize_along_features, quantize_along_time
+        from logitfill.quantizers.quantizer import GroupQuantizer, quantize_along_features, quantize_along_time
 
         torch.manual_seed(0)
         page = torch.randn(2, 16, 8)

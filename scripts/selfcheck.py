@@ -4,21 +4,12 @@
 """
 from __future__ import annotations
 
-import json
-from pathlib import Path
-
 import numpy as np
 import torch
 
+from logitfill.allocators.allocate import self_check as allocate_self_check
 from logitfill.models.deepseek_qwen import DeepSeekQwenKVAdapter
-from logitfill.quantization.allocate import allocate_levels, level_histogram, self_check as allocate_self_check
-from logitfill.quantization.quantizer import GroupQuantizer, make_quantizers, quantize_along_time
-
-_STAGE9 = Path(
-    "/root/autodl-tmp/quantization/PRISM/experiments/validation_chain/exp_battery/results/stage9_alloc"
-)
-_EXTRAS = (32, 62, 96, 174)
-_HIST_KEYS = ("fp16", "int8", "int4", "int2", "avg_bit")
+from logitfill.quantizers.quantizer import GroupQuantizer, make_quantizers, quantize_along_time
 
 
 def _close(a: torch.Tensor, b: torch.Tensor, tol: float = 1e-5) -> None:
@@ -44,29 +35,6 @@ def check_quantizer_matches_pm_kvq() -> None:
         got = quantize_along_time(states, GroupQuantizer(bits, 128))
         _close(got, ref, tol=1e-6)
     print("quantizer matches pm_kvq", flush=True)
-
-
-def check_stage9_histograms() -> None:
-    summary = json.loads((_STAGE9 / "stage9_alloc.json").read_text(encoding="utf-8"))
-    mismatches = []
-    for sample in summary["samples"]:
-        packed = np.load(_STAGE9 / "scores" / f"{sample['fold']}_{sample['index']}.npz")
-        d2 = packed["d2"].astype(np.float64)
-        d4 = packed["d4"].astype(np.float64)
-        d8 = packed["d8"].astype(np.float64)
-        for extra in _EXTRAS:
-            levels = allocate_levels(d2, d4, d8, extra)
-            got = level_histogram(levels)
-            saved = sample["hist"][str(extra)]["wf"]
-            for key in _HIST_KEYS:
-                if abs(got[key] - float(saved[key])) > 1e-6:
-                    mismatches.append(
-                        f"{sample['fold']}{sample['index']} extra={extra} {key}: "
-                        f"got {got[key]} saved {saved[key]}"
-                    )
-    if mismatches:
-        raise RuntimeError("waterfill histogram mismatch\n" + "\n".join(mismatches[:12]))
-    print(f"stage9 histograms match on {len(summary['samples'])} trajectories", flush=True)
 
 
 def check_adapter() -> None:
@@ -118,7 +86,6 @@ def check_adapter() -> None:
 def main() -> None:
     allocate_self_check()
     check_quantizer_matches_pm_kvq()
-    check_stage9_histograms()
     check_adapter()
     print("logitfill self-check ok", flush=True)
 

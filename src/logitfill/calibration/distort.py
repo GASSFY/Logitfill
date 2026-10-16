@@ -8,8 +8,8 @@ from __future__ import annotations
 import numpy as np
 import torch
 
-from logitfill.quantization.allocate import allocate_levels
-from logitfill.quantization.quantizer import GroupQuantizer, quantize_along_time
+from logitfill.allocators.allocate import allocate_levels
+from logitfill.quantizers.quantizer import GroupQuantizer, quantize_along_time
 
 
 def channel_curves(

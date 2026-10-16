@@ -15,7 +15,7 @@ from typing import Optional
 from torch import nn
 
 from logitfill.models.apply import apply_kv
-from logitfill.policy import PrecisionPolicy
+from logitfill.allocators.policy import PrecisionPolicy
 
 
 class DeepSeekQwenKVAdapter:

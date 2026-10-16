@@ -8,7 +8,7 @@ from __future__ import annotations
 from types import MethodType
 
 from logitfill.models.qwen2_attention import make_qwen2_forward
-from logitfill.quantization.quantizer import make_quantizers, make_value_quantizer
+from logitfill.quantizers.quantizer import make_quantizers, make_value_quantizer
 
 
 def apply_kv(

@@ -8,16 +8,12 @@ from __future__ import annotations
 
 import argparse
 import json
-import sys
 from pathlib import Path
 
-ROOT = Path(__file__).resolve().parents[1]
-sys.path.insert(0, str(ROOT))
-
-from logitfill.evaluation.aime import extract_answer, summarize_generations
-from logitfill.evaluation.generate import generate_text
-from logitfill.policy import PrecisionPolicy
-from logitfill.quantization.memory import runtime_footprint
+from logitfill.allocators.memory import runtime_footprint
+from logitfill.allocators.policy import PrecisionPolicy
+from logitfill.benchmarks.aime import extract_answer, summarize_generations
+from logitfill.benchmarks.generate import generate_text
 
 
 def _problems(path: str) -> list[dict]:

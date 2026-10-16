@@ -23,12 +23,12 @@ Key 从全员 INT2 起步，按注意力 logit 的二阶对角失真把剩余比
 
 | 路径 | 内容 |
 | --- | --- |
-| `logitfill/policy.py` | 模型级档位表的保存、加载、重叠率和投票 |
-| `logitfill/calibration.py` | Long-CoT 样本读取和等权曲线聚合 |
-| `logitfill/quantization/allocate.py` | K+V 预算换算和反向注水 |
-| `logitfill/quantization/memory.py` | 历史 payload、residual 和 effective bit |
-| `logitfill/models/qwen2_attention.py` | BF16 attention 之后再压缩完整页 |
-| `logitfill/packed/` | 打包 cache、reference attention 和 CUDA decode kernel |
+| `src/logitfill/allocators/policy.py` | 模型级档位表的保存、加载、重叠率和投票 |
+| `src/logitfill/calibration/` | Long-CoT 样本读取和等权曲线聚合 |
+| `src/logitfill/allocators/allocate.py` | K+V 预算换算和反向注水 |
+| `src/logitfill/allocators/memory.py` | 历史 payload、residual 和 effective bit |
+| `src/logitfill/models/qwen2_attention.py` | BF16 attention 之后再压缩完整页 |
+| `src/logitfill/packed/` | 打包 cache、reference attention 和 CUDA decode kernel |
 | `scripts/calibrate_policy.py` | 用一份或多份校准数据生成 policy |
 | `scripts/compare_policies.py` | 比较 policy 重叠，并可在留出数据上测 ΔNLL |
 | `scripts/evaluate.py` | pass@1、majority voting 和 footprint |
