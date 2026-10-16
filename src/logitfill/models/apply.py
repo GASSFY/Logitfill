@@ -16,7 +16,7 @@ def apply_kv(
     group_size: int = 128,
     v_group_size: int | None = None,
     page_size: int | None = None,
-    v_bits: int = 2,
+    bit_v: int = 2,
 ) -> None:
     if model.__class__.__name__ != "Qwen2ForCausalLM":
         raise TypeError(
@@ -29,12 +29,12 @@ def apply_kv(
     head_dim = int(getattr(model.config, "head_dim", None) or model.config.hidden_size // n_q)
     if page % group_size != 0:
         raise ValueError(f"page_size {page} must be a multiple of Key group_size {group_size}")
-    if int(v_bits) < 16 and head_dim % value_group != 0:
+    if int(bit_v) < 16 and head_dim % value_group != 0:
         raise ValueError(f"head_dim {head_dim} is not divisible by v_group_size {value_group}")
-    if int(v_bits) < 2 or int(v_bits) > 16:
-        raise ValueError(f"v_bits must be in 2..16, got {v_bits}")
+    if int(bit_v) < 2 or int(bit_v) > 16:
+        raise ValueError(f"bit_v must be in 2..16, got {bit_v}")
     quantizers = make_quantizers(group_size)
-    value_quantizer = None if int(v_bits) >= 16 else make_value_quantizer(int(v_bits), value_group)
+    value_quantizer = None if int(bit_v) >= 16 else make_value_quantizer(int(bit_v), value_group)
     make_forward = make_qwen2_forward(model)
     for i, layer in enumerate(model.model.layers):
         attn = layer.self_attn
@@ -46,5 +46,5 @@ def apply_kv(
         attn.kv_group_size = group_size
         attn.v_group_size = value_group
         attn.kv_page_size = page
-        attn.v_bits = int(v_bits)
+        attn.bit_v = int(bit_v)
         attn.forward = MethodType(make_forward(i), attn)

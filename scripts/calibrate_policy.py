@@ -3,7 +3,7 @@
 Examples:
   python scripts/calibrate_policy.py --model /path/to/model \
       --data c1=/path/to/longcot_a.jsonl --data c2=/path/to/longcot_b.jsonl \
-      --target-kv-bit 2.5 3.0 --out artifacts/policies
+      --target-bit 2.5 3.0 --out artifacts/policies
 """
 from __future__ import annotations
 
@@ -36,12 +36,12 @@ def main() -> None:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--model", required=True)
     parser.add_argument("--data", action="append", required=True, type=_named_path)
-    parser.add_argument("--target-kv-bit", type=float, nargs="+", required=True)
+    parser.add_argument("--target-bit", type=float, nargs="+", required=True)
     parser.add_argument("--out", type=Path, required=True)
     parser.add_argument("--max-samples", type=int, default=None)
     parser.add_argument("--max-length", type=int, default=8192)
     parser.add_argument("--chat-template", action="store_true")
-    parser.add_argument("--v-bits", type=int, default=2)
+    parser.add_argument("--bit-v", type=int, default=2)
     parser.add_argument("--k-group-size", type=int, default=128)
     parser.add_argument("--v-group-size", type=int, default=128)
     parser.add_argument("--page-size", type=int, default=128)
@@ -65,7 +65,7 @@ def main() -> None:
         group_size=args.k_group_size,
         v_group_size=args.v_group_size,
         page_size=args.page_size,
-        v_bits=args.v_bits,
+        bit_v=args.bit_v,
     ).attach()
     quantizers = make_quantizers(args.k_group_size)
     n_groups = model.config.num_attention_heads // model.config.num_key_value_heads
@@ -99,9 +99,9 @@ def main() -> None:
         means = aggregate_curves(samples)
         policies = policies_from_curves(
             means["normalized"],
-            args.target_kv_bit,
+            args.target_bit,
             model_id=args.model,
-            v_bits=args.v_bits,
+            bit_v=args.bit_v,
             k_group_size=args.k_group_size,
             v_group_size=args.v_group_size,
             page_size=args.page_size,
@@ -119,10 +119,10 @@ def main() -> None:
         }
         (dataset_dir / "curves_summary.json").write_text(json.dumps(summary, indent=2) + "\n", encoding="utf-8")
         for policy in policies:
-            target = f"{policy.metadata['target_kv_bit']:.4f}"
+            target = f"{policy.metadata['target_bit']:.4f}"
             policy.save(dataset_dir / f"kv{target}")
             print(
-                f"saved {name} target_kv={target} achieved_kv={policy.metadata['achieved']['kv_bit']:.4f}",
+                f"saved {name} target_kv={target} achieved_kv={policy.metadata['achieved']['actual_bit_kv']:.4f}",
                 flush=True,
             )
 

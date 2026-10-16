@@ -59,7 +59,7 @@ def reference_attention(manager, layer_idx: int, query: torch.Tensor, key_new: t
 def _kernel_attention(manager, layer_idx: int, query: torch.Tensor, key_new: torch.Tensor, value_new: torch.Tensor, scaling: float):
     kernel = get_kernel()
     layer = manager.layers[layer_idx]
-    if kernel is None or query.shape[-2] != 1 or manager.v_bits != 2 or not query.is_cuda:
+    if kernel is None or query.shape[-2] != 1 or manager.bit_v != 2 or not query.is_cuda:
         return None
     dim = int(query.shape[-1])
     if dim > 1024 or dim & (dim - 1):

@@ -27,7 +27,7 @@ class DeepSeekQwenKVAdapter:
         group_size: int = 128,
         page_size: int | None = None,
         v_group_size: int | None = None,
-        v_bits: int = 2,
+        bit_v: int = 2,
         backend: str = "fake",
     ):
         if model.__class__.__name__ != "Qwen2ForCausalLM":
@@ -43,7 +43,7 @@ class DeepSeekQwenKVAdapter:
         self.group_size = group_size
         self.page_size = group_size if page_size is None else page_size
         self.v_group_size = group_size if v_group_size is None else v_group_size
-        self.v_bits = int(v_bits)
+        self.bit_v = int(bit_v)
         self.backend = backend
         self.n_layers = int(model.config.num_hidden_layers)
         self.n_kv = int(model.config.num_key_value_heads)
@@ -68,7 +68,7 @@ class DeepSeekQwenKVAdapter:
             group_size=self.group_size,
             v_group_size=self.v_group_size,
             page_size=self.page_size,
-            v_bits=self.v_bits,
+            bit_v=self.bit_v,
         )
         self._attached = True
         if self.policy is not None:
@@ -111,9 +111,9 @@ class DeepSeekQwenKVAdapter:
     def load_policy(self, directory: str) -> PrecisionPolicy:
         policy = PrecisionPolicy.load(directory)
         policy.validate_model(self.model)
-        if int(policy.metadata.get("v_bits", self.v_bits)) != self.v_bits:
+        if int(policy.metadata.get("bit_v", self.bit_v)) != self.bit_v:
             raise ValueError(
-                f"policy v_bits={policy.metadata.get('v_bits')} but adapter v_bits={self.v_bits}"
+                f"policy bit_v={policy.metadata.get('bit_v')} but adapter bit_v={self.bit_v}"
             )
         self.policy = policy
         if self._attached:
@@ -134,7 +134,7 @@ class DeepSeekQwenKVAdapter:
                 page_size=self.page_size,
                 k_group_size=self.group_size,
                 v_group_size=self.v_group_size,
-                v_bits=self.v_bits,
+                bit_v=self.bit_v,
                 device=device,
             )
         return self._packed

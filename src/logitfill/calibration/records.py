@@ -156,10 +156,10 @@ def aggregate_curves(samples: list[dict]) -> dict[str, dict[str, np.ndarray]]:
 
 def policies_from_curves(
     curves: dict[str, np.ndarray],
-    target_kv_bits: list[float],
+    target_bits: list[float],
     *,
     model_id: str,
-    v_bits: int,
+    bit_v: int,
     k_group_size: int,
     v_group_size: int,
     page_size: int,
@@ -170,15 +170,15 @@ def policies_from_curves(
     policies = []
     saved = {key: curves[key] for key in ("d2", "d4", "d8") if key in curves}
     head_dim = int(curves["d2"].shape[-1])
-    for target in target_kv_bits:
-        budget = kv_history_budget(target, v_bits, head_dim)
-        levels = allocate_levels(curves["d2"], curves["d4"], curves["d8"], budget["extra_bits_per_head"])
+    for target in target_bits:
+        budget = kv_history_budget(target, bit_v, head_dim)
+        levels = allocate_levels(curves["d2"], curves["d4"], curves["d8"], budget["extra_budget_per_head"])
         policies.append(
             build_policy(
                 levels,
                 model_id=model_id,
-                target_kv_bit=target,
-                v_bits=v_bits,
+                target_bit=target,
+                bit_v=bit_v,
                 k_group_size=k_group_size,
                 v_group_size=v_group_size,
                 page_size=page_size,

@@ -194,7 +194,7 @@ def main():
     )
     model.eval()
     device = next(model.parameters()).device
-    adapter = DeepSeekQwenKVAdapter(model, group_size=128, v_bits=16).attach()
+    adapter = DeepSeekQwenKVAdapter(model, group_size=128, bit_v=16).attach()
     n_groups = model.config.num_attention_heads // model.config.num_key_value_heads
     quantizers = make_quantizers(128)
     print(

@@ -1,6 +1,6 @@
 """History payload and end-to-end KV footprint.
 
-``target_kv_bit`` counts only Key/Value codes on quantized history tokens.
+``target_bit`` counts only Key/Value codes on quantized history tokens.
 This module adds the BF16 residual page, scale/min metadata, and packing
 padding so a reported effective bit is not confused with that target.
 """
@@ -25,7 +25,7 @@ def runtime_footprint(
     page_size: int = 128,
     k_group_size: int = 128,
     v_group_size: int = 128,
-    v_bits: int = 2,
+    bit_v: int = 2,
     dtype_bytes: int = 2,
 ) -> dict[str, float]:
     """Bytes and effective bit-width of one sequence at ``seq_len`` tokens.
@@ -47,15 +47,15 @@ def runtime_footprint(
     hist = int(seq_len) // int(page_size) * int(page_size)
     residual = int(seq_len) - hist
     groups = hist // int(k_group_size) if k_group_size else 0
-    achieved = achieved_history_bits(values, v_bits)
+    achieved = achieved_history_bits(values, bit_v)
 
     k_payload_bits = float(hist * LEVEL_BITS[values].sum())
     v_channels = n_layers * n_kv * head_dim
-    if int(v_bits) >= 16:
+    if int(bit_v) >= 16:
         v_payload_bits = float(hist * 16 * v_channels)
         v_meta_bytes = 0.0
     else:
-        v_payload_bits = float(hist * int(v_bits) * v_channels)
+        v_payload_bits = float(hist * int(bit_v) * v_channels)
         v_groups = head_dim // int(v_group_size)
         v_meta_bytes = float(hist * n_layers * n_kv * v_groups * 2 * dtype_bytes)
 
@@ -84,9 +84,9 @@ def runtime_footprint(
         "seq_len": float(seq_len),
         "history_tokens": float(hist),
         "residual_tokens": float(residual),
-        "history_k_bit": achieved["k_bit"],
-        "history_v_bit": achieved["v_bit"],
-        "history_kv_bit": achieved["kv_bit"],
+        "actual_bit_k": achieved["actual_bit_k"],
+        "bit_v": achieved["bit_v"],
+        "actual_bit_kv": achieved["actual_bit_kv"],
         "k_payload_bytes": k_payload_bits / 8.0,
         "v_payload_bytes": v_payload_bits / 8.0,
         "packing_padding_bytes": pad_bits / 8.0,

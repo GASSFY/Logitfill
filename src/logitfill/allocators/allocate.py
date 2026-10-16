@@ -11,11 +11,11 @@ import numpy as np
 LEVEL_BITS = np.array([2, 4, 8, 16], dtype=np.int64)
 
 
-def extra_bits(target_bit: float, n_channels: int = 128) -> int:
-    """Spare bits per head above an int2 floor."""
-    spare = (float(target_bit) - 2.0) * n_channels
+def extra_budget_per_head(target_bit_k: float, n_channels: int = 128) -> int:
+    """Integer Key bits per head above the int2 floor. This is not ``target_bit``."""
+    spare = (float(target_bit_k) - 2.0) * n_channels
     if spare < 0:
-        raise ValueError(f"target_bit {target_bit} is below the int2 floor")
+        raise ValueError(f"target_bit_k {target_bit_k} is below the int2 floor")
     return int(round(spare))
 
 
@@ -23,32 +23,32 @@ def extra_bits(target_bit: float, n_channels: int = 128) -> int:
 LEVEL_EXTRA = np.array([0, 2, 6, 14], dtype=np.int64)
 
 
-def kv_history_budget(target_kv_bit: float, v_bits: int = 2, n_channels: int = 128) -> dict:
+def kv_history_budget(target_bit: float, bit_v: int = 2, n_channels: int = 128) -> dict:
     """Convert a K+V history payload budget into a per-head Key budget.
 
-    ``target_kv_bit`` is the average of Key and Value code bits on quantized
+    ``target_bit`` is the average of Key and Value code bits on quantized
     history tokens. The Value width is fixed, so the Key target is
 
-        target_k_bit = 2 * target_kv_bit - v_bits.
+        target_bit_k = 2 * target_bit - bit_v.
 
     Residual BF16 pages and scale/min metadata are not part of this budget.
-    ``extra_bits`` rounds to an integer per head, so the achieved rate can
+    ``extra_budget_per_head`` rounds to an integer per head, so the achieved rate can
     differ from the request by less than half a bit per head.
     """
-    if int(v_bits) < 2 or int(v_bits) > 16:
-        raise ValueError(f"v_bits must be in 2..16, got {v_bits}")
-    target_k = 2.0 * float(target_kv_bit) - float(v_bits)
+    if int(bit_v) < 2 or int(bit_v) > 16:
+        raise ValueError(f"bit_v must be in 2..16, got {bit_v}")
+    target_k = 2.0 * float(target_bit) - float(bit_v)
     if target_k < 2.0 or target_k > 16.0:
         raise ValueError(
-            f"target_kv_bit {target_kv_bit} with v_bits {v_bits} implies "
+            f"target_bit {target_bit} with bit_v {bit_v} implies "
             f"Key target {target_k}, outside [2, 16]"
         )
-    extra = extra_bits(target_k, n_channels)
+    extra = extra_budget_per_head(target_k, n_channels)
     return {
-        "target_kv_bit": float(target_kv_bit),
-        "v_bits": int(v_bits),
-        "target_k_bit": float(target_k),
-        "extra_bits_per_head": int(extra),
+        "target_bit": float(target_bit),
+        "bit_v": int(bit_v),
+        "target_bit_k": float(target_k),
+        "extra_budget_per_head": int(extra),
         "n_channels": int(n_channels),
     }
 
@@ -61,30 +61,30 @@ def spent_extra_per_head(levels: np.ndarray) -> np.ndarray:
     return LEVEL_EXTRA[values].sum(axis=-1)
 
 
-def achieved_history_bits(levels: np.ndarray, v_bits: int = 2) -> dict[str, float]:
+def achieved_history_bits(levels: np.ndarray, bit_v: int = 2) -> dict[str, float]:
     """Mean Key / Value / joint payload bits implied by a level map."""
     values = np.asarray(levels, dtype=np.int64)
-    k_bit = float(LEVEL_BITS[values].mean()) if values.size else float("nan")
+    actual_bit_k = float(LEVEL_BITS[values].mean()) if values.size else float("nan")
     return {
-        "k_bit": k_bit,
-        "v_bit": float(v_bits),
-        "kv_bit": 0.5 * (k_bit + float(v_bits)),
+        "actual_bit_k": actual_bit_k,
+        "bit_v": float(bit_v),
+        "actual_bit_kv": 0.5 * (actual_bit_k + float(bit_v)),
     }
 
 
-def assert_history_budget(levels: np.ndarray, target_kv_bit: float, v_bits: int = 2) -> dict:
+def assert_history_budget(levels: np.ndarray, target_bit: float, bit_v: int = 2) -> dict:
     """Reject a level map that spends more than the per-head Key budget."""
     values = np.asarray(levels, dtype=np.int64)
-    budget = kv_history_budget(target_kv_bit, v_bits, int(values.shape[-1]))
+    budget = kv_history_budget(target_bit, bit_v, int(values.shape[-1]))
     spent = spent_extra_per_head(values)
     overflow = int(spent.max()) if spent.size else 0
-    if overflow > budget["extra_bits_per_head"]:
+    if overflow > budget["extra_budget_per_head"]:
         raise ValueError(
             f"waterfill spent {overflow} extra bits in a head, "
-            f"budget is {budget['extra_bits_per_head']}"
+            f"budget is {budget['extra_budget_per_head']}"
         )
-    budget["max_extra_spent"] = overflow
-    budget.update(achieved_history_bits(values, v_bits))
+    budget["extra_spent_per_head"] = overflow
+    budget.update(achieved_history_bits(values, bit_v))
     return budget
 
 
@@ -143,7 +143,7 @@ def level_histogram(levels: np.ndarray) -> dict[str, float]:
         "int8": float((flat == 2).sum() / n_heads),
         "int4": float((flat == 1).sum() / n_heads),
         "int2": float((flat == 0).sum() / n_heads),
-        "avg_bit": float(LEVEL_BITS[flat].mean()) if flat.size else float("nan"),
+        "actual_bit_k": float(LEVEL_BITS[flat].mean()) if flat.size else float("nan"),
     }
 
 
@@ -157,12 +157,12 @@ def self_check() -> None:
     level2 = waterfill(d2, d4, d8, extra=10)
     if not np.array_equal(level2, np.array([2, 1, 1])):
         raise RuntimeError(f"waterfill 10-bit got {level2}")
-    if extra_bits(2.484375) != 62:
-        raise RuntimeError(f"extra bits got {extra_bits(2.484375)}")
-    budget = kv_history_budget(2.5, v_bits=2, n_channels=128)
-    if abs(budget["target_k_bit"] - 3.0) > 1e-12 or budget["extra_bits_per_head"] != 128:
+    if extra_budget_per_head(2.484375) != 62:
+        raise RuntimeError(f"extra bits got {extra_budget_per_head(2.484375)}")
+    budget = kv_history_budget(2.5, bit_v=2, n_channels=128)
+    if abs(budget["target_bit_k"] - 3.0) > 1e-12 or budget["extra_budget_per_head"] != 128:
         raise RuntimeError(f"kv budget got {budget}")
-    checked = assert_history_budget(level, target_kv_bit=3.0, v_bits=2)
-    if checked["max_extra_spent"] != 6:
+    checked = assert_history_budget(level, target_bit=3.0, bit_v=2)
+    if checked["extra_spent_per_head"] != 6:
         raise RuntimeError(f"spent extra got {checked}")
     print("allocate self-check ok", flush=True)

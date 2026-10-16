@@ -18,20 +18,20 @@ from logitfill.calibration.distort import normalize_channel_curves
 
 class BudgetPolicyTest(unittest.TestCase):
     def test_kv_budget_converts_to_key_target(self):
-        budget = kv_history_budget(2.5, v_bits=2, n_channels=128)
-        self.assertEqual(budget["target_k_bit"], 3.0)
-        self.assertEqual(budget["extra_bits_per_head"], 128)
+        budget = kv_history_budget(2.5, bit_v=2, n_channels=128)
+        self.assertEqual(budget["target_bit_k"], 3.0)
+        self.assertEqual(budget["extra_budget_per_head"], 128)
         with self.assertRaises(ValueError):
-            kv_history_budget(1.5, v_bits=2, n_channels=128)
+            kv_history_budget(1.5, bit_v=2, n_channels=128)
 
-    def test_waterfill_never_exceeds_extra_bits(self):
+    def test_waterfill_never_exceeds_extra_budget_per_head(self):
         rng = np.random.default_rng(0)
         curves = np.sort(rng.random((3, 32)), axis=0)[::-1]
         levels = waterfill(curves[0], curves[1], curves[2], extra=20)
         spent = int(np.array([0, 2, 6, 14], dtype=np.int64)[levels].sum())
         self.assertLessEqual(spent, 20)
-        checked = assert_history_budget(levels, target_kv_bit=(2.0 + 20 / 32 + 2.0) / 2.0, v_bits=2)
-        self.assertLessEqual(checked["max_extra_spent"], 20)
+        checked = assert_history_budget(levels, target_bit=(2.0 + 20 / 32 + 2.0) / 2.0, bit_v=2)
+        self.assertLessEqual(checked["extra_spent_per_head"], 20)
 
     def test_normalize_removes_length_scale(self):
         curves = {
@@ -49,8 +49,8 @@ class BudgetPolicyTest(unittest.TestCase):
         policy = build_policy(
             levels,
             model_id="unit-model",
-            target_kv_bit=2.25,
-            v_bits=2,
+            target_bit=2.25,
+            bit_v=2,
             calibration_datasets=["c1"],
             n_samples=3,
             # Constant gain has no rank variation, so Spearman is undefined.
@@ -71,8 +71,8 @@ class BudgetPolicyTest(unittest.TestCase):
         other = build_policy(
             np.zeros_like(levels),
             model_id="unit-model",
-            target_kv_bit=2.0,
-            v_bits=2,
+            target_bit=2.0,
+            bit_v=2,
         )
         mismatch = overlap_report(policy, other)
         self.assertFalse(mismatch["same_budget"])
@@ -82,18 +82,18 @@ class BudgetPolicyTest(unittest.TestCase):
         left = np.zeros((1, 1, 2), dtype=np.int64)
         right = np.ones((1, 1, 2), dtype=np.int64)
         policies = [
-            build_policy(left, model_id="m", target_kv_bit=2.0, v_bits=2),
-            build_policy(right, model_id="m", target_kv_bit=3.0, v_bits=2),
+            build_policy(left, model_id="m", target_bit=2.0, bit_v=2),
+            build_policy(right, model_id="m", target_bit=3.0, bit_v=2),
         ]
         chosen = consensus_levels(policies)
         self.assertTrue(np.array_equal(chosen, np.zeros((1, 1, 2), dtype=np.int64)))
 
     def test_effective_bit_counts_residual_separately(self):
         levels = np.zeros((1, 1, 4), dtype=np.int64)
-        short = runtime_footprint(levels, seq_len=6, page_size=4, k_group_size=4, v_group_size=4, v_bits=2)
+        short = runtime_footprint(levels, seq_len=6, page_size=4, k_group_size=4, v_group_size=4, bit_v=2)
         self.assertEqual(short["history_tokens"], 4)
         self.assertEqual(short["residual_tokens"], 2)
-        self.assertGreater(short["effective_bit"], short["history_kv_bit"])
+        self.assertGreater(short["effective_bit"], short["actual_bit_kv"])
         self.assertEqual(spearman(np.array([1.0, 2.0, 3.0]), np.array([1.0, 2.0, 3.0])), 1.0)
 
 
@@ -112,7 +112,7 @@ class TorchScheduleTest(unittest.TestCase):
         attn.v_quant_len = 0
         attn.k_levels = None
         attn.kv_quantizers = make_quantizers(4)
-        attn.v_bits = 2
+        attn.bit_v = 2
         attn.v_quantizer = make_value_quantizer(2, 4)
         key = torch.randn(1, 1, 6, 4)
         value = torch.randn(1, 1, 6, 4)
@@ -171,7 +171,7 @@ class TorchScheduleTest(unittest.TestCase):
         ids = torch.randint(0, 64, (1, 8))
         with torch.no_grad():
             reference = reference_model(input_ids=ids[:, :6], use_cache=True)
-            adapter = DeepSeekQwenKVAdapter(quantized_model, group_size=4, v_bits=2).attach()
+            adapter = DeepSeekQwenKVAdapter(quantized_model, group_size=4, bit_v=2).attach()
             first = quantized_model(input_ids=ids[:, :6], use_cache=True)
         self.assertTrue(torch.allclose(first.logits, reference.logits, atol=1e-5, rtol=1e-4))
         attention = quantized_model.model.layers[0].self_attn
@@ -205,7 +205,7 @@ class TorchScheduleTest(unittest.TestCase):
             page_size=64,
             k_group_size=64,
             v_group_size=64,
-            v_bits=2,
+            bit_v=2,
             device="cuda",
         )
         key = torch.randn(1, 1, 64, 64, device="cuda")

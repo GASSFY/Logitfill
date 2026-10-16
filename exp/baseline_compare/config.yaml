@@ -1,0 +1,26 @@
+model: deepseek-ai/DeepSeek-R1-Distill-Qwen-7B
+dataset: HuggingFaceH4/aime_2024
+n: 1
+length: 160
+prompt_len: 32
+seed: 0
+dtype: bfloat16
+attn_impl: sdpa
+page_size: 128
+group_size: 128
+residual_length: 128
+bit_k: 2
+bit_v: 2
+target_bit: 2.0
+# MB per layer. Must cover the 16-bit sink and window; history above that is what gets lowered.
+pm_kvq_budget_mb: 0.28
+n_sink_token: 1
+n_sink_token_bits: 16
+n_window_token: 128
+n_window_token_bits: 16
+n_init_kv_bits: 16
+methods:
+  - logitfill
+  - kivi
+  - kvtuner
+  - pm_kvq

@@ -2,10 +2,10 @@
 
 LogitFill 给 Key cache 做静态混合精度，给 Value cache 做统一的 per-token INT2。每个模型离线校准一次，保存一张 `[layers, kv_heads, head_dim]` 档位表。在线推理只读取这张表，不再计算曲线，也不再运行注水。
 
-历史区的目标比特 `target_kv_bit` 是 Key 和 Value 码字的平均值。Value 固定 2 bit，因此
+历史区的目标比特 `target_bit` 是 Key 和 Value 码字的平均值。Value 固定 2 bit，因此
 
 ```text
-target_k_bit = 2 * target_kv_bit - 2
+target_bit_k = 2 * target_bit - 2
 ```
 
 Key 从全员 INT2 起步，按注意力 logit 的二阶对角失真把剩余比特逐档买到 4、8 或 16 bit。BF16 residual page、scale/min 和 packing padding 不占用这个预算；评测时另报 effective bit 和 bytes/token。
@@ -43,7 +43,7 @@ python scripts/calibrate_policy.py \
     --model /path/to/DeepSeek-R1-Distill-Qwen-7B \
     --data c1=/path/to/longcot_a.jsonl \
     --data c2=/path/to/longcot_b.jsonl \
-    --target-kv-bit 2.5 3.0 \
+    --target-bit 2.5 3.0 \
     --out artifacts/policies
 
 python scripts/compare_policies.py \
@@ -62,6 +62,6 @@ python scripts/evaluate.py \
     --out artifacts/aime_fake.json
 ```
 
-同一模型、同一 `target_kv_bit` 下，两张表的 `exact_agreement` 高，说明档位主要反映模型结构。预算或形状不同的表不能这样解释。
+同一模型、同一 `target_bit` 下，两张表的 `exact_agreement` 高，说明档位主要反映模型结构。预算或形状不同的表不能这样解释。
 
 `exp/ablation/run_ablation.py` 仍是 Key 分配机制实验，Value 保持 BF16。部署路径的 Value 默认是 INT2。

@@ -95,7 +95,7 @@ def main() -> None:
             group_size=int(policy.metadata.get("k_group_size", 128)),
             v_group_size=int(policy.metadata.get("v_group_size", 128)),
             page_size=int(policy.metadata.get("page_size", 128)),
-            v_bits=int(policy.metadata.get("v_bits", 2)),
+            bit_v=int(policy.metadata.get("bit_v", 2)),
             backend=args.backend,
         ).attach()
         adapter.load_policy(args.policy)
@@ -147,7 +147,7 @@ def main() -> None:
                 page_size=int(policy.metadata.get("page_size", 128)),
                 k_group_size=int(policy.metadata.get("k_group_size", 128)),
                 v_group_size=int(policy.metadata.get("v_group_size", 128)),
-                v_bits=int(policy.metadata.get("v_bits", 2)),
+                bit_v=int(policy.metadata.get("bit_v", 2)),
             )
             for length in lengths
         ]
@@ -155,7 +155,7 @@ def main() -> None:
             "fake stores dequantized BF16 values and does not reduce memory; "
             "packed is the backend that can reduce memory and decode bandwidth"
             if args.backend == "fake"
-            else "effective_bit includes the BF16 residual page and metadata, so it is not target_kv_bit"
+            else "effective_bit includes the BF16 residual page and metadata, so it is not target_bit"
         )
     args.out.parent.mkdir(parents=True, exist_ok=True)
     args.out.write_text(json.dumps({"summary": summary, "records": records}, indent=2) + "\n", encoding="utf-8")

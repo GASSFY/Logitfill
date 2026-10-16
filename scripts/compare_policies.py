@@ -27,12 +27,12 @@ def _named_dir(value: str) -> tuple[str, str]:
 def _consensus(policies: list[PrecisionPolicy]) -> PrecisionPolicy:
     levels = consensus_levels(policies)
     base = dict(policies[0].metadata)
-    budgets = {policy.metadata.get("target_kv_bit") for policy in policies}
-    v_bits = {int(policy.metadata.get("v_bits", 2)) for policy in policies}
+    budgets = {policy.metadata.get("target_bit") for policy in policies}
+    bit_v = {int(policy.metadata.get("bit_v", 2)) for policy in policies}
     feasible = False
-    if len(budgets) == 1 and len(v_bits) == 1 and None not in budgets:
+    if len(budgets) == 1 and len(bit_v) == 1 and None not in budgets:
         try:
-            assert_history_budget(levels, float(next(iter(budgets))), int(next(iter(v_bits))))
+            assert_history_budget(levels, float(next(iter(budgets))), int(next(iter(bit_v))))
             feasible = True
         except ValueError:
             feasible = False
@@ -75,7 +75,7 @@ def _evaluate(policies: dict[str, PrecisionPolicy], args) -> dict:
         group_size=int(first.metadata.get("k_group_size", 128)),
         v_group_size=int(first.metadata.get("v_group_size", 128)),
         page_size=int(first.metadata.get("page_size", 128)),
-        v_bits=int(first.metadata.get("v_bits", 2)),
+        bit_v=int(first.metadata.get("bit_v", 2)),
     ).attach()
     records = load_records(args.eval_data)
     if args.max_samples is not None:

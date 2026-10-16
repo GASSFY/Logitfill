@@ -83,7 +83,7 @@ def mean_curves(samples: list[dict[str, np.ndarray]], keys: tuple[str, ...] = ("
     return out
 
 
-def levels_for_budget(curves: dict[str, np.ndarray], extra_bits: int) -> np.ndarray:
+def levels_for_budget(curves: dict[str, np.ndarray], extra_budget_per_head: int) -> np.ndarray:
     """One head group. ``curves`` values are ``[n_kv, head_dim]``."""
     stacked = {name: curves[name][None, ...] for name in ("d2", "d4", "d8")}
-    return allocate_levels(stacked["d2"], stacked["d4"], stacked["d8"], extra_bits)[0]
+    return allocate_levels(stacked["d2"], stacked["d4"], stacked["d8"], extra_budget_per_head)[0]

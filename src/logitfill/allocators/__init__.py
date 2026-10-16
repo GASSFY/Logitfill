@@ -3,7 +3,7 @@
 from logitfill.allocators.allocate import (
     allocate_levels,
     assert_history_budget,
-    extra_bits,
+    extra_budget_per_head,
     kv_history_budget,
     waterfill,
 )
@@ -15,7 +15,7 @@ __all__ = [
     "allocate_levels",
     "assert_history_budget",
     "build_policy",
-    "extra_bits",
+    "extra_budget_per_head",
     "kv_history_budget",
     "runtime_footprint",
     "waterfill",

@@ -14,11 +14,11 @@ from logitfill.packed.layout import dequantize_key, dequantize_value, quantize_k
 
 
 class _LayerStore:
-    def __init__(self, levels: torch.Tensor, page_size: int, k_group_size: int, v_group_size: int, v_bits: int):
+    def __init__(self, levels: torch.Tensor, page_size: int, k_group_size: int, v_group_size: int, bit_v: int):
         self.page_size = page_size
         self.k_group_size = k_group_size
         self.v_group_size = v_group_size
-        self.v_bits = v_bits
+        self.bit_v = bit_v
         built = tier_tables(levels)
         self.table = built["tiers"]
         self.table["tier"] = built["tier"]
@@ -63,7 +63,7 @@ class _LayerStore:
 
     def _flush(self, key: torch.Tensor, value: torch.Tensor) -> None:
         packed_k = quantize_key_page(key, self.table, self.k_group_size)
-        packed_v = quantize_value_page(value, self.v_bits, self.v_group_size)
+        packed_v = quantize_value_page(value, self.bit_v, self.v_group_size)
         if self.hist_k is None:
             self.hist_k = packed_k
             self.hist_v = packed_v
@@ -73,7 +73,7 @@ class _LayerStore:
                 self.hist_k[code]["scale"] = torch.cat((self.hist_k[code]["scale"], packed_k[code]["scale"]), dim=2)
                 self.hist_k[code]["min"] = torch.cat((self.hist_k[code]["min"], packed_k[code]["min"]), dim=2)
             self.hist_k[3]["value"] = torch.cat((self.hist_k[3]["value"], packed_k[3]["value"]), dim=1)
-            if self.v_bits >= 16:
+            if self.bit_v >= 16:
                 self.hist_v["value"] = torch.cat((self.hist_v["value"], packed_v["value"]), dim=1)
             else:
                 for name in ("code", "scale", "min"):
@@ -86,7 +86,7 @@ class _LayerStore:
             empty = torch.zeros(self.table["tier"].shape[0], 0, dim, dtype=torch.float32, device=self.table["tier"].device)
             return empty, empty
         key = dequantize_key(self.hist_len, self.table, self.hist_k, self.k_group_size)
-        value = dequantize_value(self.hist_v, self.hist_len, dim, self.v_bits, self.v_group_size)
+        value = dequantize_value(self.hist_v, self.hist_len, dim, self.bit_v, self.v_group_size)
         return key, value
 
 
@@ -102,7 +102,7 @@ class PackedKVManager:
         page_size: int,
         k_group_size: int,
         v_group_size: int,
-        v_bits: int,
+        bit_v: int,
         device,
     ):
         self.n_q = int(n_q)
@@ -111,7 +111,7 @@ class PackedKVManager:
         self.page_size = int(page_size)
         self.k_group_size = int(k_group_size)
         self.v_group_size = int(v_group_size)
-        self.v_bits = int(v_bits)
+        self.bit_v = int(bit_v)
         self.device = device
         self.seq_len = 0
         self.layers = []
@@ -121,7 +121,7 @@ class PackedKVManager:
             else:
                 values = torch.as_tensor(level, dtype=torch.int64, device=device)
             self.layers.append(
-                _LayerStore(values, page_size, k_group_size, v_group_size, v_bits)
+                _LayerStore(values, page_size, k_group_size, v_group_size, bit_v)
             )
 
     def reset(self) -> None:

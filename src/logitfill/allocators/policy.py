@@ -43,9 +43,9 @@ class PrecisionPolicy:
         for key in ("n_layers", "n_kv", "head_dim"):
             if key in self.metadata and int(self.metadata[key]) != shape[{"n_layers": 0, "n_kv": 1, "head_dim": 2}[key]]:
                 raise ValueError(f"metadata {key}={self.metadata[key]} does not match levels {shape}")
-        if self.metadata.get("enforce_budget", True) and "target_kv_bit" in self.metadata:
-            v_bits = int(self.metadata.get("v_bits", 2))
-            assert_history_budget(self.levels, float(self.metadata["target_kv_bit"]), v_bits)
+        if self.metadata.get("enforce_budget", True) and "target_bit" in self.metadata:
+            bit_v = int(self.metadata.get("bit_v", 2))
+            assert_history_budget(self.levels, float(self.metadata["target_bit"]), bit_v)
         for name, curve in self.curves.items():
             if curve.shape != self.levels.shape:
                 raise ValueError(f"curve {name} has shape {curve.shape}, levels are {self.levels.shape}")
@@ -90,8 +90,8 @@ def build_policy(
     levels: np.ndarray,
     *,
     model_id: str,
-    target_kv_bit: float,
-    v_bits: int = 2,
+    target_bit: float,
+    bit_v: int = 2,
     k_group_size: int = 128,
     v_group_size: int = 128,
     page_size: int = 128,
@@ -102,8 +102,8 @@ def build_policy(
 ) -> PrecisionPolicy:
     """Assemble a checked policy from an allocator output."""
     values = np.asarray(levels, dtype=np.int64)
-    budget = assert_history_budget(values, target_kv_bit, v_bits)
-    achieved = achieved_history_bits(values, v_bits)
+    budget = assert_history_budget(values, target_bit, bit_v)
+    achieved = achieved_history_bits(values, bit_v)
     metadata = {
         "policy_version": POLICY_VERSION,
         "code_version": __version__,
@@ -114,10 +114,10 @@ def build_policy(
         "k_group_size": int(k_group_size),
         "v_group_size": int(v_group_size),
         "page_size": int(page_size),
-        "v_bits": int(v_bits),
-        "target_kv_bit": float(target_kv_bit),
-        "target_k_bit": budget["target_k_bit"],
-        "extra_bits_per_head": budget["extra_bits_per_head"],
+        "bit_v": int(bit_v),
+        "target_bit": float(target_bit),
+        "target_bit_k": budget["target_bit_k"],
+        "extra_budget_per_head": budget["extra_budget_per_head"],
         "calibration_datasets": list(calibration_datasets or []),
         "n_samples": int(n_samples),
         "normalized": bool(normalized),
@@ -176,17 +176,17 @@ def overlap_report(left: PrecisionPolicy, right: PrecisionPolicy) -> dict:
             "Overlap is only defined for the same model layout."
         )
     same_budget = (
-        left.metadata.get("target_kv_bit") == right.metadata.get("target_kv_bit")
-        and int(left.metadata.get("v_bits", 2)) == int(right.metadata.get("v_bits", 2))
+        left.metadata.get("target_bit") == right.metadata.get("target_bit")
+        and int(left.metadata.get("bit_v", 2)) == int(right.metadata.get("bit_v", 2))
     )
     report = {
         "same_shape": True,
         "same_budget": bool(same_budget),
         "exact_agreement": float(np.mean(left.levels == right.levels)),
-        "avg_bit_left": float(LEVEL_BITS[left.levels].mean()),
-        "avg_bit_right": float(LEVEL_BITS[right.levels].mean()),
+        "actual_bit_k_left": float(LEVEL_BITS[left.levels].mean()),
+        "actual_bit_k_right": float(LEVEL_BITS[right.levels].mean()),
     }
-    report["avg_bit_abs_diff"] = abs(report["avg_bit_left"] - report["avg_bit_right"])
+    report["actual_bit_k_abs_diff"] = abs(report["actual_bit_k_left"] - report["actual_bit_k_right"])
     for code, name in _LEVEL_NAMES.items():
         report[f"jaccard_{name}"] = _jaccard(left.levels == code, right.levels == code)
     if "d2" in left.curves and "d4" in left.curves and "d2" in right.curves and "d4" in right.curves:

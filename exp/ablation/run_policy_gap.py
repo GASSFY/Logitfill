@@ -25,9 +25,9 @@ from logitfill.models.deepseek_qwen import DeepSeekQwenKVAdapter
 from logitfill.quantizers.quantizer import make_quantizers
 
 
-def _levels_from_capture(curves, target_kv_bit: float, v_bits: int) -> "object":
-    budget = kv_history_budget(target_kv_bit, v_bits, int(curves["d2"].shape[-1]))
-    return allocate_levels(curves["d2"], curves["d4"], curves["d8"], budget["extra_bits_per_head"])
+def _levels_from_capture(curves, target_bit: float, bit_v: int) -> "object":
+    budget = kv_history_budget(target_bit, bit_v, int(curves["d2"].shape[-1]))
+    return allocate_levels(curves["d2"], curves["d4"], curves["d8"], budget["extra_budget_per_head"])
 
 
 def main() -> None:
@@ -35,12 +35,12 @@ def main() -> None:
     parser.add_argument("--model", required=True)
     parser.add_argument("--calib", required=True, help="Long-CoT JSONL or Parquet used only to fit the offline policy")
     parser.add_argument("--eval", required=True, dest="eval_data")
-    parser.add_argument("--target-kv-bit", type=float, required=True)
+    parser.add_argument("--target-bit", type=float, required=True)
     parser.add_argument("--max-calib", type=int, default=None)
     parser.add_argument("--max-eval", type=int, default=None)
     parser.add_argument("--max-length", type=int, default=8192)
     parser.add_argument("--chat-template", action="store_true")
-    parser.add_argument("--v-bits", type=int, default=2)
+    parser.add_argument("--bit-v", type=int, default=2)
     parser.add_argument("--group-size", type=int, default=128)
     parser.add_argument("--out", type=Path, default=ROOT / "exp" / "ablation" / "results" / "policy_gap.json")
     args = parser.parse_args()
@@ -58,7 +58,7 @@ def main() -> None:
     )
     model.eval()
     device = next(model.parameters()).device
-    adapter = DeepSeekQwenKVAdapter(model, group_size=args.group_size, v_bits=args.v_bits).attach()
+    adapter = DeepSeekQwenKVAdapter(model, group_size=args.group_size, bit_v=args.bit_v).attach()
     quantizers = make_quantizers(args.group_size)
     n_groups = model.config.num_attention_heads // model.config.num_key_value_heads
 
@@ -90,9 +90,9 @@ def main() -> None:
         raise RuntimeError("calibration set produced no usable traces")
     offline = policies_from_curves(
         aggregate_curves(calib_curves)["normalized"],
-        [args.target_kv_bit],
+        [args.target_bit],
         model_id=args.model,
-        v_bits=args.v_bits,
+        bit_v=args.bit_v,
         k_group_size=args.group_size,
         v_group_size=args.group_size,
         page_size=args.group_size,
@@ -120,13 +120,13 @@ def main() -> None:
                 capture_curves(
                     model, adapter, prompt_ids, prompt_tokens, quantizers, n_groups, "prompt"
                 )["normalized"],
-                args.target_kv_bit,
-                args.v_bits,
+                args.target_bit,
+                args.bit_v,
             ),
             "oracle": _levels_from_capture(
                 capture_curves(model, adapter, input_ids, prompt_len, quantizers, n_groups, "response")["normalized"],
-                args.target_kv_bit,
-                args.v_bits,
+                args.target_bit,
+                args.bit_v,
             ),
         }
         for name, levels in variants.items():
@@ -136,7 +136,7 @@ def main() -> None:
             scores[name].append(scored - reference)
             print(f"id={record['id']} {name}={scores[name][-1]:.5f}", flush=True)
     summary = {name: None if not values else float(sum(values) / len(values)) for name, values in scores.items()}
-    payload = {"target_kv_bit": args.target_kv_bit, "delta_nll": summary, "samples": scores}
+    payload = {"target_bit": args.target_bit, "delta_nll": summary, "samples": scores}
     args.out.parent.mkdir(parents=True, exist_ok=True)
     args.out.write_text(json.dumps(payload, indent=2) + "\n", encoding="utf-8")
     print(json.dumps(summary, indent=2), flush=True)

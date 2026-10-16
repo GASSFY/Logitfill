@@ -7,7 +7,7 @@ decode the current page stays in the original dtype until it reaches
 
 Key groups run along the token axis and may use a static per-channel level
 map (0=int2, 1=int4, 2=int8, 3=fp16). Value groups run along the head
-dimension at one fixed width, default int2. ``v_bits >= 16`` leaves Value
+dimension at one fixed width, default int2. ``bit_v >= 16`` leaves Value
 uncompressed, which the Key-only mechanism ablations use.
 """
 from __future__ import annotations
@@ -61,8 +61,8 @@ def quantize_completed_pages(attn, key_states: torch.Tensor, value_states: torch
         attn.k_levels,
         attn.kv_quantizers,
     )
-    v_bits = int(getattr(attn, "v_bits", 16))
-    if v_bits < 16:
+    bit_v = int(getattr(attn, "bit_v", 16))
+    if bit_v < 16:
         value_states[..., done:quant_len, :] = quantize_along_features(
             value_states[..., done:quant_len, :],
             attn.v_quantizer,
