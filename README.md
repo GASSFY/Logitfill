@@ -1,57 +1,67 @@
 # LogitFill
 
-对 Key cache 做混合精度。每个 channel 先放在 2 bit，再用反向注水把剩余比特买到下一档性价比最高的 channel 上。Value 保持原精度。当前只接 DeepSeek-R1-Distill-Qwen-7B，它的结构是 Qwen2。
+LogitFill 给 Key cache 做静态混合精度，给 Value cache 做统一的 per-token INT2。每个模型离线校准一次，保存一张 `[layers, kv_heads, head_dim]` 档位表。在线推理只读取这张表，不再计算曲线，也不再运行注水。
 
-失真是
+历史区的目标比特 `target_kv_bit` 是 Key 和 Value 码字的平均值。Value 固定 2 bit，因此
 
-\[
-D_c(b)=q_c e_c(b)
-\]
+```text
+target_k_bit = 2 * target_kv_bit - 2
+```
 
-\(e_c(b)\) 是该 channel 在比特 \(b\) 下的分组量化误差，\(q_c\) 是生成段 query 的能量。购买一次只升一档，性价比是 \((D(b)-D(b'))/(b'-b)\)。档位是 2→4、4→8、8→16，花费 2、4、8 bit。16 bit 的失真为 0。
+Key 从全员 INT2 起步，按注意力 logit 的二阶对角失真把剩余比特逐档买到 4、8 或 16 bit。BF16 residual page、scale/min 和 packing padding 不占用这个预算；评测时另报 effective bit 和 bytes/token。
+
+在线顺序是：
+
+1. Prefill 用原始精度做 attention。
+2. Attention 结束后，按固定档位压缩已经凑满的 128-token 页。
+3. Decode 的当前页留在 BF16，参与本次 attention。
+4. 当前页满 128 后，再压缩进历史区。
+
+`fake` 后端把反量化结果写回浮点 cache，只用于核对数值和任务准确率，不减少显存，也不能作为吞吐结果。`packed` 后端按档位打包历史 K/V，decode 优先走 fused kernel，编译失败时退回 dense reference。
 
 ## 目录
 
 | 路径 | 内容 |
 | --- | --- |
-| `logitfill/models/deepseek_qwen.py` | `DeepSeekQwenKVAdapter`，把量化挂到模型上，并用 `set_k_levels` 设置通道档位 |
-| `logitfill/models/qwen2_attention.py` | Qwen2 attention：满组的 Key 按通道量化，尾部保持原精度 |
-| `logitfill/models/apply.py` | `apply_kv`，换掉每一层的 forward |
-| `logitfill/quantization/quantizer.py` | 非对称、按序列分组的伪量化 |
-| `logitfill/quantization/distort.py` | 由 Q、K 计算 \(D_c(b)\) |
-| `logitfill/quantization/allocate.py` | `waterfill`：由 `target_bit` 得到剩余比特，并做逐档注水 |
-| `scripts/selfcheck.py` | 自检 |
-| `experiments/` | 已完成的 KV 实验和讨论记录 |
+| `logitfill/policy.py` | 模型级档位表的保存、加载、重叠率和投票 |
+| `logitfill/calibration.py` | Long-CoT 样本读取和等权曲线聚合 |
+| `logitfill/quantization/allocate.py` | K+V 预算换算和反向注水 |
+| `logitfill/quantization/memory.py` | 历史 payload、residual 和 effective bit |
+| `logitfill/models/qwen2_attention.py` | BF16 attention 之后再压缩完整页 |
+| `logitfill/packed/` | 打包 cache、reference attention 和 CUDA decode kernel |
+| `scripts/calibrate_policy.py` | 用一份或多份校准数据生成 policy |
+| `scripts/compare_policies.py` | 比较 policy 重叠，并可在留出数据上测 ΔNLL |
+| `scripts/evaluate.py` | pass@1、majority voting 和 footprint |
+| `exp/ablation/run_policy_gap.py` | offline、prompt-only、oracle 三种档位的差距 |
 
-权重量化的旧代码已经不在这个仓库里。
+## 校准和评测
 
-## 环境
-
-自检用过的版本写在 `requirements.txt`：Python 3.10、torch 2.5.1（CUDA 12.4）、transformers 4.49.0、numpy 2.2.6、datasets 3.3.2、accelerate 1.4.0。
-
-```bash
-conda create -n logitfill python=3.10 -y
-conda activate logitfill
-pip install torch==2.5.1 --index-url https://download.pytorch.org/whl/cu124
-pip install -r requirements.txt
-pip install -e .
-```
-
-自检会临时对照本机的 PM-KVQ 量化器，并核对 `experiments/validation_chain` 里 Stage 9 保存的注水直方图。PM-KVQ 不在上面的安装列表里。
+校准文件是 JSONL 或 Parquet，至少包含 `prompt` 和 `response`。`response` 必须是已经写好的 Long-CoT，脚本不会在校准集上重新采样答案。
 
 ```bash
-cd /root/autodl-tmp/quantization/PRISM
-python scripts/selfcheck.py
+python scripts/calibrate_policy.py \
+    --model /path/to/DeepSeek-R1-Distill-Qwen-7B \
+    --data c1=/path/to/longcot_a.jsonl \
+    --data c2=/path/to/longcot_b.jsonl \
+    --target-kv-bit 2.5 3.0 \
+    --out artifacts/policies
+
+python scripts/compare_policies.py \
+    --policy c1=artifacts/policies/c1/kv2.5000 \
+    --policy c2=artifacts/policies/c2/kv2.5000 \
+    --model /path/to/model \
+    --eval-data /path/to/heldout.jsonl
+
+python scripts/evaluate.py \
+    --model /path/to/model \
+    --policy artifacts/policies/c1/kv2.5000 \
+    --data /path/to/aime.parquet \
+    --backend fake \
+    --n-responses 16 \
+    --chat-template \
+    --out artifacts/aime_fake.json
 ```
 
-通过时打印 `logitfill self-check ok`。
+同一模型、同一 `target_kv_bit` 下，两张表的 `exact_agreement` 高，说明档位主要反映模型结构。预算或形状不同的表不能这样解释。
 
-## 实验记录
-
-`experiments/validation_chain/` 是 Stage 0 到 Stage 9 的脚本和结果。论文用到的数字在：
-
-- `experiments/validation_chain/exp_battery/results/stage6_waterfill/`
-- `experiments/validation_chain/exp_battery/results/stage8_budget_curve/`
-- `experiments/validation_chain/exp_battery/results/stage9_alloc/`
-
-`experiments/notes/` 是方法讨论。`experiments/archive/` 是更早的 KV 探索。这些脚本记录的是当时的运行，不作为现在的入口。
+`exp/ablation/run_ablation.py` 仍是 Key 分配机制实验，Value 保持 BF16。部署路径的 Value 默认是 INT2。

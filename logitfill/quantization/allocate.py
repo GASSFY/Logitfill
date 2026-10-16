@@ -19,6 +19,75 @@ def extra_bits(target_bit: float, n_channels: int = 128) -> int:
     return int(round(spare))
 
 
+# Extra payload bits above the int2 floor for one channel at each level.
+LEVEL_EXTRA = np.array([0, 2, 6, 14], dtype=np.int64)
+
+
+def kv_history_budget(target_kv_bit: float, v_bits: int = 2, n_channels: int = 128) -> dict:
+    """Convert a K+V history payload budget into a per-head Key budget.
+
+    ``target_kv_bit`` is the average of Key and Value code bits on quantized
+    history tokens. The Value width is fixed, so the Key target is
+
+        target_k_bit = 2 * target_kv_bit - v_bits.
+
+    Residual BF16 pages and scale/min metadata are not part of this budget.
+    ``extra_bits`` rounds to an integer per head, so the achieved rate can
+    differ from the request by less than half a bit per head.
+    """
+    if int(v_bits) < 2 or int(v_bits) > 16:
+        raise ValueError(f"v_bits must be in 2..16, got {v_bits}")
+    target_k = 2.0 * float(target_kv_bit) - float(v_bits)
+    if target_k < 2.0 or target_k > 16.0:
+        raise ValueError(
+            f"target_kv_bit {target_kv_bit} with v_bits {v_bits} implies "
+            f"Key target {target_k}, outside [2, 16]"
+        )
+    extra = extra_bits(target_k, n_channels)
+    return {
+        "target_kv_bit": float(target_kv_bit),
+        "v_bits": int(v_bits),
+        "target_k_bit": float(target_k),
+        "extra_bits_per_head": int(extra),
+        "n_channels": int(n_channels),
+    }
+
+
+def spent_extra_per_head(levels: np.ndarray) -> np.ndarray:
+    """Extra Key bits above int2. ``levels`` is ``[..., head_dim]``."""
+    values = np.asarray(levels, dtype=np.int64)
+    if np.any((values < 0) | (values > 3)):
+        raise ValueError("levels must be in {0, 1, 2, 3}")
+    return LEVEL_EXTRA[values].sum(axis=-1)
+
+
+def achieved_history_bits(levels: np.ndarray, v_bits: int = 2) -> dict[str, float]:
+    """Mean Key / Value / joint payload bits implied by a level map."""
+    values = np.asarray(levels, dtype=np.int64)
+    k_bit = float(LEVEL_BITS[values].mean()) if values.size else float("nan")
+    return {
+        "k_bit": k_bit,
+        "v_bit": float(v_bits),
+        "kv_bit": 0.5 * (k_bit + float(v_bits)),
+    }
+
+
+def assert_history_budget(levels: np.ndarray, target_kv_bit: float, v_bits: int = 2) -> dict:
+    """Reject a level map that spends more than the per-head Key budget."""
+    values = np.asarray(levels, dtype=np.int64)
+    budget = kv_history_budget(target_kv_bit, v_bits, int(values.shape[-1]))
+    spent = spent_extra_per_head(values)
+    overflow = int(spent.max()) if spent.size else 0
+    if overflow > budget["extra_bits_per_head"]:
+        raise ValueError(
+            f"waterfill spent {overflow} extra bits in a head, "
+            f"budget is {budget['extra_bits_per_head']}"
+        )
+    budget["max_extra_spent"] = overflow
+    budget.update(achieved_history_bits(values, v_bits))
+    return budget
+
+
 def waterfill(
     d2: np.ndarray,
     d4: np.ndarray,
@@ -90,4 +159,10 @@ def self_check() -> None:
         raise RuntimeError(f"waterfill 10-bit got {level2}")
     if extra_bits(2.484375) != 62:
         raise RuntimeError(f"extra bits got {extra_bits(2.484375)}")
+    budget = kv_history_budget(2.5, v_bits=2, n_channels=128)
+    if abs(budget["target_k_bit"] - 3.0) > 1e-12 or budget["extra_bits_per_head"] != 128:
+        raise RuntimeError(f"kv budget got {budget}")
+    checked = assert_history_budget(level, target_kv_bit=3.0, v_bits=2)
+    if checked["max_extra_spent"] != 6:
+        raise RuntimeError(f"spent extra got {checked}")
     print("allocate self-check ok", flush=True)

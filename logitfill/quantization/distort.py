@@ -44,6 +44,45 @@ def channel_curves(
     return curves
 
 
+def normalize_channel_curves(
+    curves: dict[str, np.ndarray],
+    n_query_tokens: int,
+    n_key_tokens: int,
+) -> dict[str, np.ndarray]:
+    """Divide summed energies by the token counts that produced them.
+
+    ``D = q * e`` is a sum over query and key positions. Dividing by both
+    counts makes a long calibration sample comparable to a short one before
+    an unweighted mean across samples.
+    """
+    n_query = max(int(n_query_tokens), 1)
+    n_key = max(int(n_key_tokens), 1)
+    out = {}
+    for key, value in curves.items():
+        if key == "q":
+            scale = float(n_query)
+        elif key.startswith("e"):
+            scale = float(n_key)
+        elif key.startswith("d"):
+            scale = float(n_query * n_key)
+        else:
+            continue
+        out[key] = np.asarray(value, dtype=np.float64) / scale
+    return out
+
+
+def mean_curves(samples: list[dict[str, np.ndarray]], keys: tuple[str, ...] = ("d2", "d4", "d8", "q", "e2", "e4", "e8")) -> dict[str, np.ndarray]:
+    """Equal-weight mean. Every sample contributes once, regardless of length."""
+    if not samples:
+        raise ValueError("mean_curves requires at least one sample")
+    out = {}
+    for key in keys:
+        if key not in samples[0]:
+            continue
+        out[key] = np.mean([np.asarray(sample[key], dtype=np.float64) for sample in samples], axis=0)
+    return out
+
+
 def levels_for_budget(curves: dict[str, np.ndarray], extra_bits: int) -> np.ndarray:
     """One head group. ``curves`` values are ``[n_kv, head_dim]``."""
     stacked = {name: curves[name][None, ...] for name in ("d2", "d4", "d8")}

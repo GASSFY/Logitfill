@@ -7,10 +7,12 @@ with open("README.md", "r", encoding="utf-8") as fh:
 
 setup(
     name="logitfill",
-    version="0.1.0",
-    description="LogitFill: Key-channel mixed precision by attention-logit water-filling",
+    version="0.2.0",
+    description="LogitFill: offline Key policy and uniform Value quantization",
     author="LogitFill",
     packages=setuptools.find_packages(),
+    package_data={"logitfill": ["packed/*.cu"]},
+    include_package_data=True,
     license="MIT",
     long_description=long_description,
     long_description_content_type="text/markdown",

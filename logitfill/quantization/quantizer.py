@@ -48,3 +48,16 @@ def make_quantizers(group_size: int = 128) -> dict[int, GroupQuantizer]:
 def quantize_along_time(states: torch.Tensor, quantizer: GroupQuantizer) -> torch.Tensor:
     """``states`` is ``[B, H, T, D]``. Groups run along T."""
     return quantizer(states.transpose(-1, -2)).transpose(-1, -2)
+
+
+def quantize_along_features(states: torch.Tensor, quantizer: GroupQuantizer) -> torch.Tensor:
+    """``states`` is ``[B, H, T, D]``. Groups run along the head dimension.
+
+    This is the per-token Value layout: each token is quantized independently,
+    and one scale/min pair covers ``group_size`` consecutive channels.
+    """
+    return quantizer(states)
+
+
+def make_value_quantizer(n_bits: int = 2, group_size: int = 128) -> GroupQuantizer:
+    return GroupQuantizer(n_bits, group_size)

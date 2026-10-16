@@ -20,40 +20,23 @@ import torch
 from datasets import load_dataset
 from transformers import AutoModelForCausalLM, AutoTokenizer
 
-ROOT = Path("/root/autodl-tmp/quantization/PRISM")
+ROOT = Path(__file__).resolve().parents[2]
 sys.path.insert(0, str(ROOT))
 
+from logitfill.evaluation.scoring import token_nll
 from logitfill.models.deepseek_qwen import DeepSeekQwenKVAdapter
 from logitfill.quantization.allocate import allocate_levels, level_histogram, waterfill
 from logitfill.quantization.distort import channel_curves
 from logitfill.quantization.quantizer import make_quantizers
-
-MODEL = (
-    "/root/autodl-tmp/hf_home/hub/models--deepseek-ai--DeepSeek-R1-Distill-Qwen-7B"
-    "/snapshots/916b56a44061fd5cd7d6a8fb632557ed4f724f60"
-)
-AIME = {
-    "HuggingFaceH4/aime_2024": (
-        "/root/autodl-tmp/hf_home/hub/datasets--HuggingFaceH4--aime_2024"
-        "/snapshots/2fe88a2f1091d5048c0f36abc874fb997b3dd99a"
-        "/data/train-00000-of-00001.parquet"
-    ),
-    "MathArena/aime_2026": (
-        "/root/autodl-tmp/hf_home/hub/datasets--MathArena--aime_2026"
-        "/snapshots/d2de22f3c656b4f56cf8981212186377d1e23bc3"
-        "/data/train-00000-of-00001.parquet"
-    ),
-}
 # extra bits per head. 32 -> 2.25 bit, 62 -> 2.484 bit, 174 -> 3.359 bit.
 DISTORTION_EXTRAS = (32, 62)
 ALLOC_EXTRAS = (62, 174)
 FIXED_COUNTS = {62: (3, 10), 174: (7, 38)}
 
 
-def load_questions(dataset_id: str) -> list[str]:
-    path = AIME[dataset_id]
+def load_questions(path: str) -> list[str]:
     ds = load_dataset("parquet", data_files=path, split="train")
-    return [row.get("problem") or row["question"] for row in ds]
+    return [row.get("problem") or row.get("question") or row["prompt"] for row in ds]
 
 
 def build_chat(tokenizer, question: str) -> str:
@@ -66,12 +49,10 @@ def build_chat(tokenizer, question: str) -> str:
     return tokenizer.apply_chat_template(messages, tokenize=False, add_generation_prompt=True)
 
 
-def nll(model, ids: torch.Tensor, prompt_len: int) -> float:
-    labels = ids.clone()
-    labels[:, :prompt_len] = -100
-    with torch.inference_mode():
-        out = model(input_ids=ids, labels=labels, use_cache=False)
-    return float(out.loss.item())
+def nll(model, ids: torch.Tensor, prompt_len: int, quantized: bool = False, page_size: int = 128) -> float:
+    # Quantized scoring follows the runtime: BF16 prefill, then page flushes
+    # after attention. Value stays BF16 here so the comparison isolates Key levels.
+    return token_nll(model, ids, prompt_len, quantized=quantized, page_size=page_size)
 
 
 def random_curve(n: int, rng: np.random.Generator):
@@ -169,7 +150,7 @@ def apply_and_score(model, adapter, ids, prompt_len, nll_ref, levels) -> float:
     adapter.skip_quant = False
     adapter.capture = False
     adapter.set_k_levels(list(levels))
-    value = nll(model, ids, prompt_len) - nll_ref
+    value = nll(model, ids, prompt_len, quantized=True, page_size=adapter.page_size) - nll_ref
     torch.cuda.empty_cache()
     return value
 
@@ -181,6 +162,9 @@ def mean(xs):
 
 def main():
     parser = argparse.ArgumentParser()
+    parser.add_argument("--model", required=True, help="Local model directory")
+    parser.add_argument("--aime-a", required=True, help="Parquet file for fold A")
+    parser.add_argument("--aime-b", required=True, help="Parquet file for fold B")
     parser.add_argument("--smoke", action="store_true")
     parser.add_argument("--n_a", type=int, default=4)
     parser.add_argument("--n_b", type=int, default=4)
@@ -197,14 +181,14 @@ def main():
     torch.manual_seed(args.seed)
     if torch.cuda.is_available():
         torch.cuda.manual_seed_all(args.seed)
-    questions = [("A", i, q) for i, q in enumerate(load_questions("HuggingFaceH4/aime_2024")[: args.n_a])]
-    questions += [("B", i, q) for i, q in enumerate(load_questions("MathArena/aime_2026")[: args.n_b])]
+    questions = [("A", i, q) for i, q in enumerate(load_questions(args.aime_a)[: args.n_a])]
+    questions += [("B", i, q) for i, q in enumerate(load_questions(args.aime_b)[: args.n_b])]
 
-    tokenizer = AutoTokenizer.from_pretrained(MODEL, trust_remote_code=True)
+    tokenizer = AutoTokenizer.from_pretrained(args.model, trust_remote_code=True)
     if tokenizer.pad_token is None:
         tokenizer.pad_token = tokenizer.eos_token
     model = AutoModelForCausalLM.from_pretrained(
-        MODEL,
+        args.model,
         torch_dtype=torch.bfloat16,
         device_map="auto",
         trust_remote_code=True,
@@ -212,7 +196,7 @@ def main():
     )
     model.eval()
     device = next(model.parameters()).device
-    adapter = DeepSeekQwenKVAdapter(model, group_size=128).attach()
+    adapter = DeepSeekQwenKVAdapter(model, group_size=128, v_bits=16).attach()
     n_groups = model.config.num_attention_heads // model.config.num_key_value_heads
     quantizers = make_quantizers(128)
     print(
