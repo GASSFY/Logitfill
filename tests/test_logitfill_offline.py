@@ -58,7 +58,11 @@ class BudgetPolicyTest(unittest.TestCase):
             v_bits=2,
             calibration_datasets=["c1"],
             n_samples=3,
-            curves={"d2": np.ones_like(levels, dtype=np.float64), "d4": np.full(levels.shape, 0.5)},
+            # Constant gain has no rank variation, so Spearman is undefined.
+            curves={
+                "d2": np.arange(levels.size, dtype=np.float64).reshape(levels.shape) + 2.0,
+                "d4": np.arange(levels.size, dtype=np.float64).reshape(levels.shape) * 0.25,
+            },
         )
         with tempfile.TemporaryDirectory() as directory:
             policy.save(directory)
